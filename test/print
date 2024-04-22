@@ -1,0 +1,5 @@
+# -*- mode: snippet-ts -*-
+# name: print!
+# key: pr
+# --
+print!("$1"${1:$(if (string-match-p "{}" (yas-text)) ", " "")}$2);
