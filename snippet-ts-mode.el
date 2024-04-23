@@ -38,19 +38,29 @@
 ;; (autoload 'yas-snippet-mode-buffer-p "yasnippet")
 
 (defcustom snippet-ts-mode-indent-offset 2
-  "Number of spaces for each indentation step in `snippet-ts-mode'."
+  "Number of spaces for each indentation step in elisp code in `snippet-ts-mode'."
   :type 'integer
   :safe 'integerp
   :group 'yasnippet)
 
-(defface snippet-ts-code-face
-  '((t (:background "#181418")))
-  "Face for elisp code in snippets."
+(defface snippet-ts-header-key-face
+  '((t (:inherit font-lock-preprocessor-face)))
+  "Face for header keys."
   :group 'yasnippet)
 
-(defface snippet-ts-field-face
+(defface snippet-ts-code-face
+  '((t (:background "#181418")))
+  "Face to highlight elisp code in snippets."
+  :group 'yasnippet)
+
+(defface snippet-ts-field-bracket-face
   '((t (:inherit font-lock-warning-face)))
-  "Face for fields with default values."
+  "Face for field expansion brackets."
+  :group 'yasnippet)
+
+(defface snippet-ts-field-value-face
+  '((t (:inherit font-lock-property-use-face)))
+  "Face field expansions."
   :group 'yasnippet)
 
 ;;; Indentation
@@ -66,12 +76,13 @@
      (no-node parent-bol 0)))
   "Tree-sitter indentation rules for `snippet-ts-mode'.")
 
+
 ;;; Font-locking
 
-(defvar snippet-ts-mode--keywords
+(defvar snippet-ts-mode--header-keys
   '("binding" "condition" "contributor" "expand-env" "group" "key" "name" "type"
     "uuid")
-  "Snippet keywords for tree-sitter font-locking.")
+  "Snippet header keywords for tree-sitter font-locking.")
 
 (defvar snippet-ts-mode--font-lock-settings
   (treesit-font-lock-rules
@@ -84,16 +95,12 @@
        name: (variable) @font-lock-variable-name-face
        value: (value) @font-lock-doc-face)
       :*)
-     
+
      (comment) @font-lock-comment-face
 
      (directive
       "#" @font-lock-comment-delimiter-face
-      _ @font-lock-comment-face :*
-      ;; name: (key) @font-lock-keyword-face
-      ;; ":" @font-lock-delimiter-face
-      ;; value: (value) @font-lock-comment-face
-      )
+      _ @font-lock-comment-face :*)
 
      (header_end) @font-lock-comment-delimiter-face)
 
@@ -105,34 +112,34 @@
    :feature 'escape-sequence
    :override t
    '((escape_sequence) @font-lock-escape-face)
-   
+
    :language 'yasnippet
    :feature 'keyword
    :override t
-   `([,@snippet-ts-mode--keywords] @font-lock-keyword-face
+   `([,@snippet-ts-mode--header-keys] @snippet-ts-header-key-face
 
      (directive
-      value: (value) @font-lock-constant-face)
+      value: (value) @font-lock-doc-face)
 
      (mirror
-      "${" @snippet-ts-field-face
-      index: (number) @snippet-ts-field-face
-      "}" @snippet-ts-field-face)
+      "${" @snippet-ts-field-bracket-face
+      index: (number) @font-lock-variable-name-face
+      "}" @snippet-ts-field-bracket-face)
 
      (elisp_code
-      ["$(" ")"] @font-lock-preprocessor-face)
+      ["$"] @font-lock-preprocessor-face)
 
      (field "$" @font-lock-misc-punctuation-face
-            index: (_) @font-lock-constant-face)
+            index: (_) @font-lock-variable-name-face)
 
-     (field "${" @snippet-ts-field-face
-            index: (_) @snippet-ts-field-face
-            "}" @snippet-ts-field-face))
+     (field "${" @snippet-ts-field-bracket-face
+            index: (_) @font-lock-variable-name-face
+            "}" @snippet-ts-field-bracket-face))
 
    :language 'yasnippet
-   :feature 'code
-   :override 'append
-   '((elisp_code) @snippet-ts-code-face)
+   :feature 'variable
+   :override t
+   '((field (text) @snippet-ts-field-value-face))
 
    ;; :language 'yasnippet
    ;; :feature 'function
@@ -150,6 +157,11 @@
    '([":"] @font-lock-delimiter-face)
 
    :language 'yasnippet
+   :feature 'code
+   :override 'append
+   '((elisp_code) @snippet-ts-code-face)
+
+   :language 'yasnippet
    :feature 'bracket
    :override 'prepend
    '((parenthesized_expression ["(" ")"] @font-lock-bracket-face)))
@@ -159,7 +171,7 @@
   '(( comment)
     ( keyword string)
     ( escape-sequence number code)
-    ( bracket delimiter))
+    ( bracket delimiter variable))
   "Snippet keywords for tree-sitter font-locking.")
 
 (defvar snippet-ts-mode-syntax-table
