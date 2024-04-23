@@ -32,15 +32,41 @@
 ;;; Code:
 
 (require 'treesit)
+(require 'yasnippet)                    ; `snippet-mode-map'
 
 ;; To add mode to `magic-fallback-mode-alist'
-(autoload 'yas-snippet-mode-buffer-p "yasnippet")
+;; (autoload 'yas-snippet-mode-buffer-p "yasnippet")
 
+(defcustom snippet-ts-mode-indent-offset 2
+  "Number of spaces for each indentation step in `snippet-ts-mode'."
+  :type 'integer
+  :safe 'integerp
+  :group 'yasnippet)
 
 (defface snippet-ts-code-face
   '((t (:background "#181418")))
   "Face for elisp code in snippets."
-  :group 'snippet)
+  :group 'yasnippet)
+
+(defface snippet-ts-field-face
+  '((t (:inherit font-lock-warning-face)))
+  "Face for fields with default values."
+  :group 'yasnippet)
+
+;;; Indentation
+
+(defvar snippet-ts-mode--indent-rules
+  `((yasnippet
+     ((parent-is "source_file") column-0 0)
+     ((match ")" "elisp_code") parent-bol 0)
+     ((node-is ")") parent 1)
+     ((parent-is "elisp_code") parent-bol snippet-ts-mode-indent-offset)
+     ((parent-is "parenthesized_expression") parent snippet-ts-mode-indent-offset)
+     ((parent-is "string") no-indent)
+     (no-node parent-bol 0)))
+  "Tree-sitter indentation rules for `snippet-ts-mode'.")
+
+;;; Font-locking
 
 (defvar snippet-ts-mode--keywords
   '("binding" "condition" "contributor" "expand-env" "group" "key" "name" "type"
@@ -51,7 +77,25 @@
   (treesit-font-lock-rules
    :language 'yasnippet
    :feature 'comment
-   '((header) @font-lock-comment-face)
+   '((local_variables
+      ["#" "-*-"] @font-lock-comment-delimiter-face
+
+      (local_definition
+       name: (variable) @font-lock-variable-name-face
+       value: (value) @font-lock-doc-face)
+      :*)
+     
+     (comment) @font-lock-comment-face
+
+     (directive
+      "#" @font-lock-comment-delimiter-face
+      _ @font-lock-comment-face :*
+      ;; name: (key) @font-lock-keyword-face
+      ;; ":" @font-lock-delimiter-face
+      ;; value: (value) @font-lock-comment-face
+      )
+
+     (header_end) @font-lock-comment-delimiter-face)
 
    :language 'yasnippet
    :feature 'string
@@ -67,26 +111,34 @@
    :override t
    `([,@snippet-ts-mode--keywords] @font-lock-keyword-face
 
-     (mirror
-      "${" @font-lock-warning-face
-      index: (number) @font-lock-warning-face
-      "}" @font-lock-warning-face)
+     (directive
+      value: (value) @font-lock-constant-face)
 
      (mirror
+      "${" @snippet-ts-field-face
+      index: (number) @snippet-ts-field-face
+      "}" @snippet-ts-field-face)
+
+     (elisp_code
       ["$(" ")"] @font-lock-preprocessor-face)
 
      (field "$" @font-lock-misc-punctuation-face
-            (number) @font-lock-number-face))
+            index: (_) @font-lock-constant-face)
+
+     (field "${" @snippet-ts-field-face
+            index: (_) @snippet-ts-field-face
+            "}" @snippet-ts-field-face))
 
    :language 'yasnippet
    :feature 'code
    :override 'append
-   '((mirror
-      code: (_) @snippet-ts-code-face))
+   '((elisp_code) @snippet-ts-code-face)
 
    ;; :language 'yasnippet
-   ;; :feature 'builtin
-   ;; '()
+   ;; :feature 'function
+   ;; '((parenthesized_expression
+   ;;    :anchor
+   ;;    (text) @font-lock-function-call-face))
 
    :language 'yasnippet
    :feature 'number
@@ -99,21 +151,32 @@
 
    :language 'yasnippet
    :feature 'bracket
-   `((parenthesized_expression ["(" ")"] @font-lock-bracket-face)))
+   :override 'prepend
+   '((parenthesized_expression ["(" ")"] @font-lock-bracket-face)))
   "Tree-sitter font-lock settings for Yasnippets.")
 
 (defvar snippet-ts-mode-feature-list
   '(( comment)
     ( keyword string)
     ( escape-sequence number code)
-    ( bracket delimiter operator))
+    ( bracket delimiter))
   "Snippet keywords for tree-sitter font-locking.")
 
+(defvar snippet-ts-mode-syntax-table
+  (let ((table (make-syntax-table)))
+    (modify-syntax-entry ?$ "'" table)
+    table)
+  "Syntax table in `snippet-ts-mode'.")
+
+(defvar-keymap snippet-ts-mode-map
+  :doc "Keymap in `snippet-ts-mode'."
+  :parent snippet-mode-map)
 
 ;;;###autoload
 (define-derived-mode snippet-ts-mode prog-mode "YaSnippet"
   "Major mode for editing yasnippet snippets, powered by tree-sitter."
   :group 'yasnippet
+  :syntax-table snippet-ts-mode-syntax-table
 
   (when (treesit-ready-p 'yasnippet)
     (treesit-parser-create 'yasnippet)
@@ -122,16 +185,18 @@
     (setq-local comment-start "# ")
     (setq-local comment-end "")
     (setq-local comment-start-skip (rx "#" (* (syntax whitespace))))
-
-    ;; Indentation
-    ;; (setq-local treesit-simple-indent-rules snippet-ts-mode--indent-rules
-    ;;             indent-tabs-mode nil)
+    (setq-local require-final-newline nil)
 
     ;; Font-Locking
     (setq-local treesit-font-lock-settings snippet-ts-mode--font-lock-settings)
     (setq-local treesit-font-lock-feature-list snippet-ts-mode-feature-list)
 
-    (treesit-major-mode-setup)))
+    ;; Indentation
+    (setq-local treesit-simple-indent-rules snippet-ts-mode--indent-rules
+                indent-tabs-mode nil)
+
+    (treesit-major-mode-setup)
+    (add-hook 'after-save-hook #'yas-maybe-load-snippet-buffer nil t)))
 
 
 (derived-mode-add-parents 'snippet-ts-mode '(snippet-mode))
