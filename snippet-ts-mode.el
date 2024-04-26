@@ -77,6 +77,34 @@
   "Tree-sitter indentation rules for `snippet-ts-mode'.")
 
 
+;;; Commands
+
+(defvar snippet-ts-mode--field-query
+  (when (treesit-available-p)
+    (treesit-query-compile 'yasnippet '((field index: (_) @field)))))
+
+(defun snippet-ts-mode-next-field (&optional previous)
+  "Move to the next snippet field."
+  (interactive)
+  (let* ((cur (treesit-parent-until (treesit-node-at (point)) "field"))
+         (beg (if previous
+                  (point-min)
+                (if cur (1+ (treesit-node-end cur)) (point))))
+         (end (if previous
+                  (if cur (1- (treesit-node-start cur)) (point))
+                (point-max))))
+    (when-let ((cap (treesit-query-capture
+                     'yasnippet snippet-ts-mode--field-query beg end t)))
+      (if previous
+          (goto-char (treesit-node-start (car (last cap))))
+        (goto-char (treesit-node-start (car cap)))))))
+
+(defun snippet-ts-mode-previous-field ()
+  "Move to the previous snippet field."
+  (interactive)
+  (snippet-ts-mode-next-field -1))
+
+
 ;;; Font-locking
 
 (defvar snippet-ts-mode--header-keys
@@ -182,7 +210,14 @@
 
 (defvar-keymap snippet-ts-mode-map
   :doc "Keymap in `snippet-ts-mode'."
-  :parent snippet-mode-map)
+  :parent snippet-mode-map
+  "C-c C-n" #'snippet-ts-mode-next-field
+  "C-c C-p" #'snippet-ts-mode-previous-field)
+
+(defvar-keymap snippet-ts-mode-repeat-move-map
+  :repeat t
+  "n" #'snippet-ts-mode-next-field
+  "p" #'snippet-ts-mode-previous-field)
 
 ;;;###autoload
 (define-derived-mode snippet-ts-mode prog-mode "YaSnippet"
