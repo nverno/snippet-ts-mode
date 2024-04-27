@@ -81,29 +81,50 @@
 
 (defvar snippet-ts-mode--field-query
   (when (treesit-available-p)
-    (treesit-query-compile 'yasnippet '((field index: (_) @field)))))
+    (treesit-query-compile
+     'yasnippet '((field index: (_) @field)
+                  (mirror index: (_) @field)))))
 
 (defun snippet-ts-mode-next-field (&optional previous)
   "Move to the next snippet field."
   (interactive)
-  (let* ((cur (treesit-parent-until (treesit-node-at (point)) "field"))
-         (beg (if previous
-                  (point-min)
-                (if cur (1+ (treesit-node-end cur)) (point))))
-         (end (if previous
-                  (if cur (1- (treesit-node-start cur)) (point))
-                (point-max))))
-    (when-let ((cap (treesit-query-capture
-                     'yasnippet snippet-ts-mode--field-query beg end t)))
-      (if previous
-          (goto-char (treesit-node-start (car (last cap))))
-        (goto-char (treesit-node-start (car cap)))))))
+  (when-let ((cap (treesit-query-capture
+                   'yasnippet snippet-ts-mode--field-query
+                   (if previous (point-min) (point))
+                   (if previous (point) (point-max))
+                   t)))
+    (and previous (setq cap (nreverse cap)))
+    (when (treesit-node-enclosed-p (treesit-node-at (point)) (car cap))
+      (pop cap))
+    (and cap (goto-char (treesit-node-start (car cap))))))
 
 (defun snippet-ts-mode-previous-field ()
   "Move to the previous snippet field."
   (interactive)
   (snippet-ts-mode-next-field -1))
 
+(defun snippet-ts-mode-increment-fields (beg end &optional decrement)
+  "Increment snippet field indices between BEG and END.
+Use whole buffer unless region is active when called interactively.
+With prefix, DECREMENT them instead."
+  (interactive
+   (if (region-active-p)
+       (list (region-beginning) (region-end) current-prefix-arg)
+     (list (point-min) (point-max) current-prefix-arg)))
+  (let ((inc (if decrement -1 1))
+        (regions
+         (mapcar (lambda (c) (cons (treesit-node-start c) (treesit-node-end c)))
+                 (treesit-query-capture
+                  'yasnippet snippet-ts-mode--field-query beg end t)))
+        (buffer-undo-list '(t)))
+    (pcase-dolist (`(,s . ,e) regions)
+      (let ((num (number-to-string
+                  (+ inc (string-to-number
+                          (buffer-substring-no-properties s e))))))
+        (goto-char s)
+        (delete-region (point) e)
+        (insert num)))))
+	
 
 ;;; Font-locking
 
@@ -212,7 +233,8 @@
   :doc "Keymap in `snippet-ts-mode'."
   :parent snippet-mode-map
   "C-c C-n" #'snippet-ts-mode-next-field
-  "C-c C-p" #'snippet-ts-mode-previous-field)
+  "C-c C-p" #'snippet-ts-mode-previous-field
+  "C-c C-i" #'snippet-ts-mode-increment-fields)
 
 (defvar-keymap snippet-ts-mode-repeat-move-map
   :repeat t
