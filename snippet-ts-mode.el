@@ -73,7 +73,7 @@
      ((parent-is "elisp_code") parent-bol snippet-ts-mode-indent-offset)
      ((parent-is "parenthesized_expression") parent snippet-ts-mode-indent-offset)
      ((parent-is "string") no-indent)
-     (no-node parent-bol 0)))
+     (no-node no-indent)))
   "Tree-sitter indentation rules for `snippet-ts-mode'.")
 
 
@@ -86,7 +86,8 @@
                   (mirror index: (_) @field)))))
 
 (defun snippet-ts-mode-next-field (&optional previous)
-  "Move to the next snippet field."
+  "Move to the next snippet field.
+When PREVIOUS is non-nil, move to previous field."
   (interactive)
   (when-let ((cap (treesit-query-capture
                    'yasnippet snippet-ts-mode--field-query
@@ -239,6 +240,7 @@ With prefix, DECREMENT them instead."
      '((elisp_code) @elisp))))
 
 (defun snippet-ts-mode--language-at-point (point)
+  "Return the tree-sitter language at POINT."
   (let ((node (treesit-node-at point 'yasnippet)))
     (if (treesit-parent-until node "elisp_code" t)
         'elisp
