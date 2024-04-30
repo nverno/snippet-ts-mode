@@ -124,7 +124,7 @@ With prefix, DECREMENT them instead."
         (goto-char s)
         (delete-region (point) e)
         (insert num)))))
-	
+
 
 ;;; Font-locking
 
@@ -223,6 +223,25 @@ With prefix, DECREMENT them instead."
     ( bracket delimiter variable))
   "Snippet keywords for tree-sitter font-locking.")
 
+
+;;; Elisp parser
+
+(defvar snippet-ts-mode--range-rules
+  (when (treesit-available-p)
+    (treesit-range-rules
+     :host 'yasnippet
+     :embed 'elisp
+     '((elisp_code) @elisp))))
+
+(defun snippet-ts-mode--language-at-point (point)
+  (let ((node (treesit-node-at point 'yasnippet)))
+    (if (treesit-parent-until node "elisp_code" t)
+        'elisp
+      'yasnippet)))
+
+
+;;; Syntax
+
 (defvar snippet-ts-mode-syntax-table
   (let ((table (make-syntax-table)))
     (modify-syntax-entry ?$ "'" table)
@@ -249,6 +268,12 @@ With prefix, DECREMENT them instead."
 
   (when (treesit-ready-p 'yasnippet)
     (treesit-parser-create 'yasnippet)
+
+    (when (treesit-ready-p 'elisp t)
+      (treesit-parser-create 'elisp)
+      (setq-local treesit-language-at-point-function
+                  #'snippet-ts-mode--language-at-point)
+      (setq-local treesit-range-settings snippet-ts-mode--range-rules))
 
     ;; Comments
     (setq-local comment-start "# ")
