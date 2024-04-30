@@ -54,7 +54,7 @@
   :group 'yasnippet)
 
 (defface snippet-ts-field-bracket-face
-  '((t (:inherit font-lock-warning-face)))
+  '((t (:inherit font-lock-keyword-face)))
   "Face for field expansion brackets."
   :group 'yasnippet)
 
@@ -167,8 +167,8 @@ With prefix, DECREMENT them instead."
    :override t
    `([,@snippet-ts-mode--header-keys] @snippet-ts-header-key-face
 
-     (directive
-      value: (value) @font-lock-doc-face)
+     ;; (directive
+     ;;  value: (value) @font-lock-doc-face)
 
      (mirror
       "${" @snippet-ts-field-bracket-face
@@ -177,6 +177,9 @@ With prefix, DECREMENT them instead."
 
      (elisp_code
       ["$"] @font-lock-preprocessor-face)
+
+     (backquote_expression
+      ["`"] @font-lock-keyword-face)
 
      (field "$" @font-lock-misc-punctuation-face
             index: (_) @font-lock-variable-name-face)
@@ -208,7 +211,9 @@ With prefix, DECREMENT them instead."
    :language 'yasnippet
    :feature 'code
    :override 'append
-   '((elisp_code) @snippet-ts-code-face)
+   '((elisp_code) @snippet-ts-code-face
+     (backquote_expression
+      code: _ @snippet-ts-code-face))
 
    :language 'yasnippet
    :feature 'bracket
