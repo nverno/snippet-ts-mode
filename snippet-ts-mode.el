@@ -63,6 +63,7 @@
   "Face field expansions."
   :group 'yasnippet)
 
+
 ;;; Indentation
 
 (defvar snippet-ts-mode--indent-rules
@@ -112,19 +113,28 @@ With prefix, DECREMENT them instead."
    (if (region-active-p)
        (list (region-beginning) (region-end) current-prefix-arg)
      (list (point-min) (point-max) current-prefix-arg)))
-  (let ((inc (if decrement -1 1))
-        (regions
-         (mapcar (lambda (c) (cons (treesit-node-start c) (treesit-node-end c)))
-                 (treesit-query-capture
-                  'yasnippet snippet-ts-mode--field-query beg end t)))
-        (buffer-undo-list '(t)))
-    (pcase-dolist (`(,s . ,e) regions)
-      (let ((num (number-to-string
-                  (+ inc (string-to-number
-                          (buffer-substring-no-properties s e))))))
-        (goto-char s)
-        (delete-region (point) e)
-        (insert num)))))
+  (combine-change-calls beg end
+    (let ((inc (if decrement -1 1))
+          (regions
+           (mapcar (lambda (c) (cons (treesit-node-start c) (treesit-node-end c)))
+                   (treesit-query-capture
+                    'yasnippet snippet-ts-mode--field-query beg end t))))
+      (pcase-dolist (`(,s . ,e) regions)
+        (let ((num (number-to-string
+                    (+ inc (string-to-number
+                            (buffer-substring-no-properties s e))))))
+          (goto-char s)
+          (delete-region (point) e)
+          (insert num))))))
+
+(defun snippet-ts-mode-decrement-fields (beg end)
+  "Decrement snippet fields between BEG and END.
+BEG and END default to entire buffer unless region is active."
+  (interactive
+   (if (region-active-p)
+       (list (region-beginning) (region-end))
+     (list (point-min) (point-max))))
+  (funcall #'snippet-ts-mode-increment-fields beg end -1))
 
 
 ;;; Font-locking
@@ -260,12 +270,19 @@ With prefix, DECREMENT them instead."
   :parent snippet-mode-map
   "C-c C-n" #'snippet-ts-mode-next-field
   "C-c C-p" #'snippet-ts-mode-previous-field
-  "C-c C-i" #'snippet-ts-mode-increment-fields)
+  "C-c +"   #'snippet-ts-mode-increment-fields
+  "C-c -"   #'snippet-ts-mode-decrement-fields)
+
+(defvar-keymap snippet-ts-mode-repeat-increment-map
+  :repeat t
+  "+" #'snippet-ts-mode-increment-fields
+  "-" #'snippet-ts-mode-decrement-fields)
 
 (defvar-keymap snippet-ts-mode-repeat-move-map
   :repeat t
   "n" #'snippet-ts-mode-next-field
   "p" #'snippet-ts-mode-previous-field)
+
 
 ;;;###autoload
 (define-derived-mode snippet-ts-mode prog-mode "YaSnippet"
