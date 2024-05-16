@@ -33,6 +33,7 @@
 
 (require 'treesit)
 (require 'yasnippet)                    ; `snippet-mode-map'
+(require 'elisp-mode)                   ; xref, completion
 
 ;; To add mode to `magic-fallback-mode-alist'
 ;; (autoload 'yas-snippet-mode-buffer-p "yasnippet")
@@ -76,65 +77,6 @@
      ((parent-is "string") no-indent)
      (no-node no-indent)))
   "Tree-sitter indentation rules for `snippet-ts-mode'.")
-
-
-;;; Commands
-
-(defvar snippet-ts-mode--field-query
-  (when (treesit-available-p)
-    (treesit-query-compile
-     'yasnippet '((field index: (_) @field)
-                  (mirror index: (_) @field)))))
-
-(defun snippet-ts-mode-next-field (&optional previous)
-  "Move to the next snippet field.
-When PREVIOUS is non-nil, move to previous field."
-  (interactive)
-  (when-let ((cap (treesit-query-capture
-                   'yasnippet snippet-ts-mode--field-query
-                   (if previous (point-min) (point))
-                   (if previous (point) (point-max))
-                   t)))
-    (and previous (setq cap (nreverse cap)))
-    (when (treesit-node-enclosed-p (treesit-node-at (point)) (car cap))
-      (pop cap))
-    (and cap (goto-char (treesit-node-start (car cap))))))
-
-(defun snippet-ts-mode-previous-field ()
-  "Move to the previous snippet field."
-  (interactive)
-  (snippet-ts-mode-next-field -1))
-
-(defun snippet-ts-mode-increment-fields (beg end &optional decrement)
-  "Increment snippet field indices between BEG and END.
-Use whole buffer unless region is active when called interactively.
-With prefix, DECREMENT them instead."
-  (interactive
-   (if (region-active-p)
-       (list (region-beginning) (region-end) current-prefix-arg)
-     (list (point-min) (point-max) current-prefix-arg)))
-  (combine-change-calls beg end
-    (let ((inc (if decrement -1 1))
-          (regions
-           (mapcar (lambda (c) (cons (treesit-node-start c) (treesit-node-end c)))
-                   (treesit-query-capture
-                    'yasnippet snippet-ts-mode--field-query beg end t))))
-      (pcase-dolist (`(,s . ,e) regions)
-        (let ((num (number-to-string
-                    (+ inc (string-to-number
-                            (buffer-substring-no-properties s e))))))
-          (goto-char s)
-          (delete-region (point) e)
-          (insert num))))))
-
-(defun snippet-ts-mode-decrement-fields (beg end)
-  "Decrement snippet fields between BEG and END.
-BEG and END default to entire buffer unless region is active."
-  (interactive
-   (if (region-active-p)
-       (list (region-beginning) (region-end))
-     (list (point-min) (point-max))))
-  (funcall #'snippet-ts-mode-increment-fields beg end -1))
 
 
 ;;; Font-locking
@@ -240,6 +182,25 @@ BEG and END default to entire buffer unless region is active."
   "Snippet keywords for tree-sitter font-locking.")
 
 
+;;; Syntax
+
+(defvar snippet-ts-mode-syntax-table
+  (let ((table (copy-syntax-table snippet-mode-syntax-table)))
+    (modify-syntax-entry ?$ "'" table)
+    table)
+  "Syntax table in `snippet-ts-mode'.")
+
+(defvar snippet-ts-mode--xref-syntax-table
+  (let ((table (copy-syntax-table snippet-ts-mode-syntax-table)))
+    (modify-syntax-entry ?$ "_" table)
+    (modify-syntax-entry ?\? "_" table)
+    (modify-syntax-entry ?~ "_" table)
+    (modify-syntax-entry ?! "_" table)
+    (modify-syntax-entry ?= "_" table)
+    table)
+  "Syntax table during xref in `snippet-ts-mode'.")
+
+
 ;;; Elisp parser
 
 (defvar snippet-ts-mode--range-rules
@@ -257,17 +218,88 @@ BEG and END default to entire buffer unless region is active."
       'yasnippet)))
 
 
-;;; Syntax
+;;; Commands
 
-(defvar snippet-ts-mode-syntax-table
-  (let ((table (make-syntax-table)))
-    (modify-syntax-entry ?$ "'" table)
-    table)
-  "Syntax table in `snippet-ts-mode'.")
+(defvar snippet-ts-mode--field-query
+  (when (treesit-available-p)
+    (treesit-query-compile
+     'yasnippet '((field index: (_) @field)
+                  (mirror index: (_) @field))))
+  "Query to find snippet fields.")
+
+(defsubst snippet-ts-mode--in-code-p (&optional point)
+  "Return non-nil when POINT is in elisp code."
+  (eq 'elisp (snippet-ts-mode--language-at-point (or point (point)))))
+
+(defsubst snippet-ts-mode--in-header-p (&optional point)
+  "Return non-nil when POINT is in snippet header."
+  (when-let ((node (treesit-node-at (or point (point)) 'yasnippet)))
+    (treesit-parent-until node "header" t)))
+
+(defun snippet-ts-mode-next-field (&optional previous)
+  "Move to the next snippet field.
+When PREVIOUS is non-nil, move to previous field."
+  (interactive)
+  (when-let ((cap (treesit-query-capture
+                   'yasnippet snippet-ts-mode--field-query
+                   (if previous (point-min) (point))
+                   (if previous (point) (point-max))
+                   t)))
+    (and previous (setq cap (nreverse cap)))
+    (when (treesit-node-enclosed-p (treesit-node-at (point)) (car cap))
+      (pop cap))
+    (and cap (goto-char (treesit-node-start (car cap))))))
+
+(defun snippet-ts-mode-previous-field ()
+  "Move to the previous snippet field."
+  (interactive)
+  (snippet-ts-mode-next-field -1))
+
+(defun snippet-ts-mode-increment-fields (beg end &optional decrement)
+  "Increment snippet field indices between BEG and END.
+Use whole buffer unless region is active when called interactively.
+With prefix, DECREMENT them instead."
+  (interactive
+   (if (region-active-p)
+       (list (region-beginning) (region-end) current-prefix-arg)
+     (list (point-min) (point-max) current-prefix-arg)))
+  (combine-change-calls beg end
+    (let ((inc (if decrement -1 1))
+          (regions
+           (mapcar (lambda (c) (cons (treesit-node-start c) (treesit-node-end c)))
+                   (treesit-query-capture
+                    'yasnippet snippet-ts-mode--field-query beg end t))))
+      (pcase-dolist (`(,s . ,e) regions)
+        (let ((num (number-to-string
+                    (+ inc (string-to-number
+                            (buffer-substring-no-properties s e))))))
+          (goto-char s)
+          (delete-region (point) e)
+          (insert num))))))
+
+(defun snippet-ts-mode-decrement-fields (beg end)
+  "Decrement snippet fields between BEG and END.
+BEG and END default to entire buffer unless region is active."
+  (interactive
+   (if (region-active-p)
+       (list (region-beginning) (region-end))
+     (list (point-min) (point-max))))
+  (funcall #'snippet-ts-mode-increment-fields beg end -1))
+
+(defun snippet-ts-mode-xref-find-definitions ()
+  "Find definition at point using xref."
+  (interactive)
+  (when (snippet-ts-mode--in-code-p)
+    (with-syntax-table snippet-ts-mode--xref-syntax-table
+      (let* ((xref-backend-functions '(elisp--xref-backend t))
+             (thing (xref-backend-identifier-at-point 'elisp)))
+        (xref-find-definitions thing)))))
+
 
 (defvar-keymap snippet-ts-mode-map
   :doc "Keymap in `snippet-ts-mode'."
   :parent snippet-mode-map
+  "M-."     #'snippet-ts-mode-xref-find-definitions
   "C-c C-n" #'snippet-ts-mode-next-field
   "C-c C-p" #'snippet-ts-mode-previous-field
   "C-c +"   #'snippet-ts-mode-increment-fields
@@ -275,13 +307,46 @@ BEG and END default to entire buffer unless region is active."
 
 (defvar-keymap snippet-ts-mode-repeat-increment-map
   :repeat t
+  "=" #'snippet-ts-mode-increment-fields
   "+" #'snippet-ts-mode-increment-fields
   "-" #'snippet-ts-mode-decrement-fields)
+(put 'snippet-ts-mode-increment-fields 'repeat-check-key 'no)
 
 (defvar-keymap snippet-ts-mode-repeat-move-map
   :repeat t
   "n" #'snippet-ts-mode-next-field
   "p" #'snippet-ts-mode-previous-field)
+
+
+;;; Completion
+
+(defun snippet-ts-mode-completion-at-point ()
+  "Completion at point function for `snippet-ts-mode'."
+  (cond ((snippet-ts-mode--in-header-p)
+         (let* ((end (point))
+                (beg (save-excursion
+                       (skip-syntax-backward "w_")
+                       (point)))
+                (node (treesit-node-at (point))))
+           (pcase (treesit-node-type node)
+             ("value"
+              (let ((field (string-trim
+                            (treesit-node-text
+                             (treesit-node-child-by-field-name
+                              (treesit-node-parent node) "name")))))
+                (pcase field
+                  ((or "expand-env" "condition")
+                   (elisp-completion-at-point))
+                  ("type"
+                   (list beg end '("snippet" "command"))))))
+             ("directive" nil)
+             ("comment"
+              (save-excursion
+                (goto-char beg)
+                (and (looking-back "#\\s-*" (line-beginning-position))
+                     (list beg end snippet-ts-mode--header-keys)))))))
+        ((snippet-ts-mode--in-code-p)
+         (elisp-completion-at-point))))
 
 
 ;;;###autoload
@@ -314,6 +379,12 @@ BEG and END default to entire buffer unless region is active."
                 indent-tabs-mode nil)
 
     (treesit-major-mode-setup)
+
+    (setq-local require-final-newline nil)
+    (add-hook 'xref-backend-functions 'elisp--xref-backend nil t)
+    (add-hook 'completion-at-point-functions #'snippet-ts-mode-completion-at-point nil t)
+    (add-hook 'eldoc-documentation-functions #'elisp-eldoc-funcall nil t)
+    (add-hook 'eldoc-documentation-functions #'elisp-eldoc-var-docstring nil t)
     (add-hook 'after-save-hook #'yas-maybe-load-snippet-buffer nil t)))
 
 
