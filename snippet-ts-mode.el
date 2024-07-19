@@ -213,7 +213,8 @@
 (defun snippet-ts-mode--language-at-point (point)
   "Return the tree-sitter language at POINT."
   (let ((node (treesit-node-at point 'yasnippet)))
-    (if (treesit-parent-until node "elisp_code" t)
+    (if (treesit-parent-until
+         node (rx (or "elisp_code" "backquote_expression")) t)
         'elisp
       'yasnippet)))
 
