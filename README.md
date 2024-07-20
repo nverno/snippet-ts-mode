@@ -9,6 +9,8 @@ Features:
 - font-locking
 - basic indentation inside elisp code regions
 - some interactive commands to move between fields and increment field indices.
+- completion-at-point: for elisp in code regions and for snippet headers
+- elisp xref in code regions
 
 **WIP**: Use elisp parser in elisp code regions.
 
