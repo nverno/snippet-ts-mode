@@ -234,18 +234,18 @@
 
 (defsubst snippet-ts-mode--in-header-p (&optional point)
   "Return non-nil when POINT is in snippet header."
-  (when-let ((node (treesit-node-at (or point (point)) 'yasnippet)))
+  (when-let* ((node (treesit-node-at (or point (point)) 'yasnippet)))
     (treesit-parent-until node "header" t)))
 
 (defun snippet-ts-mode-next-field (&optional previous)
   "Move to the next snippet field.
 When PREVIOUS is non-nil, move to previous field."
   (interactive)
-  (when-let ((cap (treesit-query-capture
-                   'yasnippet snippet-ts-mode--field-query
-                   (if previous (point-min) (point))
-                   (if previous (point) (point-max))
-                   t)))
+  (when-let* ((cap (treesit-query-capture
+                    'yasnippet snippet-ts-mode--field-query
+                    (if previous (point-min) (point))
+                    (if previous (point) (point-max))
+                    t)))
     (and previous (setq cap (nreverse cap)))
     (when (treesit-node-enclosed-p (treesit-node-at (point)) (car cap))
       (pop cap))
